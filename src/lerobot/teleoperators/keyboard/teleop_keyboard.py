@@ -33,10 +33,10 @@ from .configuration_keyboard import (
 )
 
 PYNPUT_AVAILABLE = _pynput_available
-keyboard = None
+keyboard: Any = None
 if PYNPUT_AVAILABLE:
     try:
-        from pynput import keyboard
+        from pynput import keyboard  # type: ignore[no-redef]
     except Exception as e:
         PYNPUT_AVAILABLE = False
         logging.info("Could not import pynput keyboard backend: %s", e)
@@ -56,18 +56,14 @@ class KeyboardTeleop(Teleoperator):
         self.config = config
         self.robot_type = config.type
 
-        self.event_queue = Queue()
-        self.current_pressed = {}
-        self.listener = None
-        self.logs = {}
+        self.event_queue: Queue[tuple[Any, bool]] = Queue()
+        self.current_pressed: dict[Any, bool] = {}
+        self.listener: Any = None
+        self.logs: dict[str, float] = {}
 
     @property
     def action_features(self) -> dict:
-        return {
-            "dtype": "float32",
-            "shape": (len(self.arm),),
-            "names": {"motors": list(self.arm.motors)},
-        }
+        return {}
 
     @property
     def feedback_features(self) -> dict:
@@ -79,7 +75,7 @@ class KeyboardTeleop(Teleoperator):
 
     @property
     def is_calibrated(self) -> bool:
-        pass
+        return True
 
     @check_if_already_connected
     def connect(self) -> None:
@@ -158,7 +154,7 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
     def __init__(self, config: KeyboardEndEffectorTeleopConfig):
         super().__init__(config)
         self.config = config
-        self.misc_keys_queue = Queue()
+        self.misc_keys_queue: Queue[Any] = Queue()
 
     @property
     def action_features(self) -> dict:
@@ -219,7 +215,7 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
 
         return action_dict
 
-    def get_teleop_events(self) -> dict[str, Any]:
+    def get_teleop_events(self) -> dict[TeleopEvents, Any]:
         """
         Get extra control events from the keyboard such as intervention status,
         episode termination, success indicators, etc.
@@ -336,7 +332,8 @@ class KeyboardRoverTeleop(KeyboardTeleop):
     name = "keyboard_rover"
 
     def __init__(self, config: KeyboardRoverTeleopConfig):
-        super().__init__(config)
+        super().__init__(config)  # type: ignore[arg-type]
+        self.config: KeyboardRoverTeleopConfig = config
         # Add rover-specific speed settings
         self.current_linear_speed = config.linear_speed
         self.current_angular_speed = config.angular_speed

@@ -155,7 +155,7 @@ class Teleoperator(abc.ABC):
         """
         fpath = self.calibration_fpath if fpath is None else fpath
         with open(fpath) as f, draccus.config_type("json"):
-            self.calibration = draccus.load(dict[str, MotorCalibration], f)
+            self.calibration = draccus.load(dict[str, MotorCalibration], f)  # type: ignore[type-var]
 
     def _save_calibration(self, fpath: Path | None = None) -> None:
         """
@@ -166,7 +166,7 @@ class Teleoperator(abc.ABC):
         """
         fpath = self.calibration_fpath if fpath is None else fpath
         with open(fpath, "w") as f, draccus.config_type("json"):
-            draccus.dump(self.calibration, f, indent=4)
+            draccus.dump(self.calibration, f, indent=4)  # type: ignore[type-var]
 
     @abc.abstractmethod
     def configure(self) -> None:

@@ -166,8 +166,8 @@ class HomunculusArm(Teleoperator):
         display_len = max(len(key) for key in joints)
 
         start_positions = self._read(joints, normalize=False)
-        mins = start_positions.copy()
-        maxes = start_positions.copy()
+        mins: dict[str, int] = {k: int(v) for k, v in start_positions.items()}
+        maxes: dict[str, int] = {k: int(v) for k, v in start_positions.items()}
 
         user_pressed_enter = False
         while not user_pressed_enter:
@@ -200,7 +200,7 @@ class HomunculusArm(Teleoperator):
         pass
 
     # TODO(Steven): This function is copy/paste from the `HomunculusGlove` class. Consider moving it to an utility to reduce duplicated code.
-    def _normalize(self, values: dict[str, int]) -> dict[str, float]:
+    def _normalize(self, values: dict[str, int | float]) -> dict[str, float]:
         if not self.calibration:
             raise RuntimeError(f"{self} has no calibration registered.")
 
@@ -220,20 +220,22 @@ class HomunculusArm(Teleoperator):
 
         return normalized_values
 
-    def _apply_ema(self, raw: dict[str, int]) -> dict[str, float]:
+    def _apply_ema(self, raw: dict[str, int | float]) -> dict[str, float]:
         """Update buffers & running EMA values; return smoothed dict."""
         smoothed: dict[str, float] = {}
         for joint, value in raw.items():
             # maintain raw history
-            self._buffers[joint].append(value)
+            self._buffers[joint].append(int(value))
 
             # initialise on first run
-            if self._ema[joint] is None:
-                self._ema[joint] = float(value)
+            current = self._ema[joint]
+            new_ema: float
+            if current is None:
+                new_ema = float(value)
             else:
-                self._ema[joint] = self.alpha * value + (1 - self.alpha) * self._ema[joint]
-
-            smoothed[joint] = self._ema[joint]
+                new_ema = self.alpha * value + (1 - self.alpha) * current
+            self._ema[joint] = new_ema
+            smoothed[joint] = new_ema
         return smoothed
 
     def _read(

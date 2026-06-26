@@ -16,7 +16,7 @@
 
 import logging
 import time
-from typing import Any
+from typing import Any, cast
 
 from lerobot.motors import Motor, MotorCalibration, MotorNormMode
 from lerobot.motors.feetech import (
@@ -55,6 +55,7 @@ class OpenArmMini(Teleoperator):
     def __init__(self, config: OpenArmMiniConfig):
         super().__init__(config)
         self.config = config
+        self.calibration: dict[str, MotorCalibration]  # narrowed from base class
 
         if config.side is not None and config.side not in SIDE_MOTORS_TO_FLIP:
             raise ValueError(f"Invalid side '{config.side}'; expected 'left', 'right', or None.")
@@ -155,7 +156,8 @@ class OpenArmMini(Teleoperator):
         motor_resolution = self.bus.model_resolution_table[list(self.bus.motors.values())[0].model]
         max_res = motor_resolution - 1
 
-        for motor_name, motor in self.bus.motors.items():
+        for motor_name, _motor_any in self.bus.motors.items():
+            motor_obj = cast(Motor, _motor_any)
             if motor_name == "gripper":
                 input(
                     "\nGripper Calibration\n"
@@ -189,9 +191,9 @@ class OpenArmMini(Teleoperator):
                 logger.info(f"  {motor_name}: range set to [0, {max_res}] (full motor range)")
 
             self.calibration[motor_name] = MotorCalibration(
-                id=motor.id,
+                id=motor_obj.id,
                 drive_mode=drive_mode,
-                homing_offset=homing_offsets[motor_name],
+                homing_offset=int(homing_offsets[motor_name]),
                 range_min=range_min,
                 range_max=range_max,
             )

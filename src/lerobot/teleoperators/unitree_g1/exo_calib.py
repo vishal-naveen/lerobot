@@ -256,7 +256,7 @@ def run_exo_calibration(
     joint_idx = 0
     phase = "ellipse"
     advance_requested = False
-    zero_samples = []
+    zero_samples: list[float] = []
 
     def on_key(event):
         nonlocal advance_requested
@@ -454,3 +454,4 @@ def run_exo_calibration(
 
     finally:
         plt.close(fig)
+    raise RuntimeError("Calibration window closed before all joints were calibrated.")

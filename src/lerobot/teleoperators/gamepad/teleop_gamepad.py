@@ -54,7 +54,7 @@ class GamepadTeleop(Teleoperator):
         self.config = config
         self.robot_type = config.type
 
-        self.gamepad = None
+        self.gamepad: Any = None
 
     @property
     def action_features(self) -> dict:
@@ -75,7 +75,7 @@ class GamepadTeleop(Teleoperator):
     def feedback_features(self) -> dict:
         return {}
 
-    def connect(self) -> None:
+    def connect(self, calibrate: bool = True) -> None:
         # use HidApi for macos
         if sys.platform == "darwin":
             # NOTE: On macOS, pygame doesn’t reliably detect input from some controllers so we fall back to hidapi
@@ -112,7 +112,7 @@ class GamepadTeleop(Teleoperator):
 
         return action_dict
 
-    def get_teleop_events(self) -> dict[str, Any]:
+    def get_teleop_events(self) -> dict[TeleopEvents, Any]:
         """
         Get extra control events from the gamepad such as intervention status,
         episode termination, success indicators, etc.
@@ -170,6 +170,7 @@ class GamepadTeleop(Teleoperator):
         # No calibration needed for gamepad
         pass
 
+    @property
     def is_calibrated(self) -> bool:
         """Check if gamepad is calibrated."""
         # Gamepad doesn't require calibration
