@@ -450,8 +450,22 @@ def record(
 
         with VideoEncodingManager(dataset):
             recorded_episodes = 0
+            session_started = time.perf_counter()
             while recorded_episodes < cfg.dataset.num_episodes and not events["stop_recording"]:
+                frames_before = dataset.num_frames
+                elapsed_min = (time.perf_counter() - session_started) / 60
+                print()
+                print("=" * 70)
+                print(
+                    f"  RECORDING  episode {recorded_episodes + 1} of {cfg.dataset.num_episodes} "
+                    f"this run   (dataset total will be {dataset.num_episodes + 1})"
+                )
+                print(f"  up to {cfg.dataset.episode_time_s}s   session elapsed {elapsed_min:.0f} min")
+                print("  [->] done, go to setup      [ESC] end session")
+                print("  [<-] ignored while recording")
+                print("=" * 70)
                 log_say(f"Recording episode {dataset.num_episodes}", cfg.play_sounds)
+                events["phase"] = "record"
                 record_loop(
                     robot=robot,
                     events=events,
@@ -469,10 +483,21 @@ def record(
 
                 # Execute a few seconds without recording to give time to manually reset the environment
                 # Skip reset for the last episode to be recorded
+                events["phase"] = "idle"
+                print(f"  episode captured: {dataset.num_frames - frames_before} frames")
+
                 if not events["stop_recording"] and (
                     (recorded_episodes < cfg.dataset.num_episodes - 1) or events["rerecord_episode"]
                 ):
+                    print()
+                    print("-" * 70)
+                    print(f"  SETUP      reposition the object    (up to {cfg.dataset.reset_time_s}s)")
+                    print("  [->] done, start the next episode")
+                    print("  [<-] throw away the episode just recorded and redo it")
+                    print("  [ESC] end session")
+                    print("-" * 70)
                     log_say("Reset the environment", cfg.play_sounds)
+                    events["phase"] = "reset"
 
                     record_loop(
                         robot=robot,
@@ -487,7 +512,10 @@ def record(
                         display_data=cfg.display_data,
                     )
 
+                events["phase"] = "idle"
+
                 if events["rerecord_episode"]:
+                    print("  >> DISCARDED - re-recording this episode")
                     log_say("Re-record episode", cfg.play_sounds)
                     events["rerecord_episode"] = False
                     events["exit_early"] = False
@@ -496,6 +524,10 @@ def record(
 
                 dataset.save_episode()
                 recorded_episodes += 1
+                print(
+                    f"  >> SAVED   {recorded_episodes} of {cfg.dataset.num_episodes} this run   "
+                    f"({dataset.num_episodes} episodes / {dataset.num_frames} frames in the dataset)"
+                )
     finally:
         log_say("Stop recording", cfg.play_sounds, blocking=True)
 
