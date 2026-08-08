@@ -572,10 +572,12 @@ def record(
                 print("  [->] done, go to setup      [ESC] end session")
                 print("  [<-] ignored while recording")
                 print("=" * 70)
-                # 1-based, matching the banner. dataset.num_episodes is a count of
-                # SAVED episodes, so using it directly announced "episode 0" for the
-                # first take while the banner above said "episode 1 of N".
-                log_say(f"Recording episode {recorded_episodes + 1}", cfg.play_sounds)
+                # Announce the DATASET total (the banner's "dataset total will be N"),
+                # not the per-run counter: the per-run counter restarts at 1 on every
+                # resume, so across a 4-round session the voice said "episode 1" four
+                # times. num_episodes counts SAVED episodes, hence +1; on a retake the
+                # number repeats, which is correct - it is the same episode again.
+                log_say(f"Recording episode {dataset.num_episodes + 1}", cfg.play_sounds)
                 events["phase"] = "record"
                 record_loop(
                     robot=robot,
