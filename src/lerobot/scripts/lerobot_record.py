@@ -87,8 +87,10 @@ lerobot-record \\
 """
 
 import logging
+import os
 import time
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from pprint import pformat
 
 from lerobot.cameras import CameraConfig  # noqa: F401
@@ -346,6 +348,68 @@ def record_loop(
         timestamp = time.perf_counter() - start_episode_t
 
 
+def resolve_cell_plan(episode_index: int, append_to_log: bool = False) -> str | None:
+    """Which workspace cell the operator should stage next, or None if no plan is set.
+
+    Driven entirely by environment so this stays a generic tool: with
+    TACTILEVLA_CELL_PLAN unset the function returns None and nothing is printed.
+
+    The plan walks the cells in order, EPISODES_PER_CELL episodes each, then
+    reverses direction for the next round and alternates from there. Reversing
+    matters: with one fixed order the first cell is always recorded while the
+    operator is fresh and the last always while tired, in every round, so the
+    rounds repeat that bias instead of cancelling it.
+
+    Indexing is off the DATASET episode count, not the per-run counter, so the
+    plan continues correctly across `resume`.
+    """
+    plan = os.environ.get("TACTILEVLA_CELL_PLAN", "").strip()
+    if not plan:
+        return None
+    cells = [c.strip() for c in plan.split(",") if c.strip()]
+    if not cells:
+        return None
+
+    per_cell = max(1, int(os.environ.get("TACTILEVLA_EPISODES_PER_CELL", "5") or 5))
+    rotations = [
+        r.strip()
+        for r in os.environ.get("TACTILEVLA_ROTATIONS", "-45,-20,0,+20,+45").split(",")
+        if r.strip()
+    ]
+
+    round_len = len(cells) * per_cell
+    round_index = episode_index // round_len
+    within_round = episode_index % round_len
+    # Even rounds walk the plan as given, odd rounds walk it backwards.
+    order = cells if round_index % 2 == 0 else list(reversed(cells))
+    cell = order[within_round // per_cell]
+    take = within_round % per_cell
+
+    hint = f"round {round_index + 1}  ->  STAGE CELL {cell}   take {take + 1} of {per_cell}"
+    if rotations:
+        hint += f"   rotate object ~{rotations[take % len(rotations)]} deg"
+
+    # Nothing in the dataset itself records which cell an episode came from - the
+    # parquet has only episode_index and task_index - so append it to a CSV that
+    # outlives the terminal scrollback. Only the recording banner appends; the
+    # setup banner is a look-ahead and must not write. A discarded-and-retaken
+    # episode leaves two rows with the same episode_index; the LAST one is correct.
+    log_path = os.environ.get("TACTILEVLA_CELL_LOG", "").strip()
+    if append_to_log and log_path:
+        try:
+            p = Path(log_path)
+            new = not p.exists()
+            with p.open("a") as fh:
+                if new:
+                    fh.write("episode_index,round,cell,take,rotation_deg\n")
+                rot = rotations[take % len(rotations)] if rotations else ""
+                fh.write(f"{episode_index},{round_index + 1},{cell},{take + 1},{rot}\n")
+        except OSError as exc:  # never let bookkeeping abort a recording session
+            logging.warning(f"could not append to cell log {log_path}: {exc}")
+
+    return hint
+
+
 @parser.wrap()
 def record(
     cfg: RecordConfig,
@@ -460,6 +524,9 @@ def record(
                     f"this run   (dataset total will be {dataset.num_episodes + 1})"
                 )
                 print(f"  up to {cfg.dataset.episode_time_s}s   session elapsed {elapsed_min:.0f} min")
+                cell_hint = resolve_cell_plan(dataset.num_episodes, append_to_log=True)
+                if cell_hint:
+                    print(f"  {cell_hint}")
                 print("  [->] done, go to setup      [ESC] end session")
                 print("  [<-] ignored while recording")
                 print("=" * 70)
@@ -498,6 +565,11 @@ def record(
                     print()
                     print("-" * 70)
                     print(f"  SETUP      reposition the object    (up to {cfg.dataset.reset_time_s}s)")
+                    # Look-ahead: the operator stages the NEXT episode during this
+                    # phase, so this is where the cell actually needs to be shown.
+                    next_hint = resolve_cell_plan(dataset.num_episodes + 1)
+                    if next_hint:
+                        print(f"  NEXT: {next_hint}")
                     print("  [->] done, start the next episode")
                     print("  [<-] throw away the episode just recorded and redo it")
                     print("  [ESC] end session")
