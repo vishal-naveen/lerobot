@@ -272,6 +272,15 @@ def record_loop(
     no_action_count = 0
     timestamp = 0
     start_episode_t = time.perf_counter()
+    # How long a camera may keep serving stale frames before the session dies.
+    # read_latest() is a non-blocking peek that raises the moment the newest frame
+    # is older than 500 ms - so a single sub-second AVFoundation hiccup used to
+    # abort the entire run, twice in one evening, once during a reset phase where
+    # nothing is even recorded. Skipping the frame keeps video and parquet aligned
+    # (neither is written), and a REAL unplug still dies: the frame just keeps
+    # aging, so the stall outlives the tolerance and the original error is raised.
+    cam_stall_tolerance_s = 5.0
+    cam_stall_started: float | None = None
     while timestamp < control_time_s:
         start_loop_t = time.perf_counter()
 
@@ -280,7 +289,23 @@ def record_loop(
             break
 
         # Get robot observation
-        obs = robot.get_observation()
+        try:
+            obs = robot.get_observation()
+            cam_stall_started = None
+        except TimeoutError as e:
+            now = time.perf_counter()
+            if cam_stall_started is None:
+                cam_stall_started = now
+            stalled_s = now - cam_stall_started
+            if stalled_s > cam_stall_tolerance_s:
+                raise
+            logging.warning(
+                f"Camera frame stale, skipping this step "
+                f"({stalled_s:.1f}s of {cam_stall_tolerance_s:.0f}s tolerated): {e}"
+            )
+            precise_sleep(control_interval)
+            timestamp = time.perf_counter() - start_episode_t
+            continue
 
         # Applies a pipeline to the raw robot observation, default is IdentityProcessor
         obs_processed = robot_observation_processor(obs)
