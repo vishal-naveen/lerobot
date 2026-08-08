@@ -293,13 +293,20 @@ class FeetechMotorsBus(SerialMotorsBus):
             self.write("Torque_Enable", motor, TorqueMode.DISABLED.value, num_retry=num_retry)
             self.write("Lock", motor, 0, num_retry=num_retry)
 
-    def _disable_torque(self, motor: int, model: str, num_retry: int = 0) -> None:
+    # num_retry defaults to 3, not 0. These run only on connect/configure/disconnect -
+    # never in the control loop - so a retry costs nothing there, while a single lost
+    # packet with no retry aborts the whole launch. Observed: a Torque_Enable write to
+    # id 6 returned "no status packet" during connect and killed a recording session
+    # before it started, on an arm that read all six motors cleanly seconds later.
+    # _write re-transmits on each attempt (fresh writeTxRx), so a retry cannot apply a
+    # stale value.
+    def _disable_torque(self, motor: int, model: str, num_retry: int = 3) -> None:
         addr, length = get_address(self.model_ctrl_table, model, "Torque_Enable")
         self._write(addr, length, motor, TorqueMode.DISABLED.value, num_retry=num_retry)
         addr, length = get_address(self.model_ctrl_table, model, "Lock")
         self._write(addr, length, motor, 0, num_retry=num_retry)
 
-    def enable_torque(self, motors: int | str | list[str] | None = None, num_retry: int = 0) -> None:
+    def enable_torque(self, motors: int | str | list[str] | None = None, num_retry: int = 3) -> None:
         for motor in self._get_motors_list(motors):
             self.write("Torque_Enable", motor, TorqueMode.ENABLED.value, num_retry=num_retry)
             self.write("Lock", motor, 1, num_retry=num_retry)
