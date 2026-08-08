@@ -372,9 +372,7 @@ def resolve_cell_plan(episode_index: int, append_to_log: bool = False) -> str | 
 
     per_cell = max(1, int(os.environ.get("TACTILEVLA_EPISODES_PER_CELL", "5") or 5))
     rotations = [
-        r.strip()
-        for r in os.environ.get("TACTILEVLA_ROTATIONS", "-45,-20,0,+20,+45").split(",")
-        if r.strip()
+        r.strip() for r in os.environ.get("TACTILEVLA_ROTATIONS", "").split(",") if r.strip()
     ]
 
     round_len = len(cells) * per_cell
@@ -385,9 +383,20 @@ def resolve_cell_plan(episode_index: int, append_to_log: bool = False) -> str | 
     cell = order[within_round // per_cell]
     take = within_round % per_cell
 
+    # Rotation is indexed by how many episodes THIS CELL has had, not by take, so a
+    # rotation list longer than per_cell keeps advancing across rounds instead of
+    # repeating the same few angles. With 20 angles, 5 takes and 4 rounds every cell
+    # ends up with 20 distinct orientations. The list must be given in this same
+    # (round, take) order - see CELL_ROTATIONS in record.sh, which interleaves it so
+    # each individual round still spans the full angular range. Ordering it
+    # monotonically instead would make round 1 all steep-negative angles and alias
+    # orientation with the round.
+    cell_episode = round_index * per_cell + take
+    rotation = rotations[cell_episode % len(rotations)] if rotations else ""
+
     hint = f"round {round_index + 1}  ->  STAGE CELL {cell}   take {take + 1} of {per_cell}"
-    if rotations:
-        hint += f"   rotate object ~{rotations[take % len(rotations)]} deg"
+    if rotation != "":
+        hint += f"   rotate object ~{rotation} deg"
 
     # Nothing in the dataset itself records which cell an episode came from - the
     # parquet has only episode_index and task_index - so append it to a CSV that
@@ -402,8 +411,7 @@ def resolve_cell_plan(episode_index: int, append_to_log: bool = False) -> str | 
             with p.open("a") as fh:
                 if new:
                     fh.write("episode_index,round,cell,take,rotation_deg\n")
-                rot = rotations[take % len(rotations)] if rotations else ""
-                fh.write(f"{episode_index},{round_index + 1},{cell},{take + 1},{rot}\n")
+                fh.write(f"{episode_index},{round_index + 1},{cell},{take + 1},{rotation}\n")
         except OSError as exc:  # never let bookkeeping abort a recording session
             logging.warning(f"could not append to cell log {log_path}: {exc}")
 
@@ -515,6 +523,40 @@ def record(
         with VideoEncodingManager(dataset):
             recorded_episodes = 0
             session_started = time.perf_counter()
+
+            # One-off staging pause before the FIRST episode. Without it, recording
+            # begins the instant the leader connects, so every run's first episode
+            # captures the operator still placing the object and driving the arm to
+            # its home pose. Teleop is live here and nothing is written - the same
+            # arrangement as the between-episode reset phase.
+            staging_s = float(os.environ.get("TACTILEVLA_START_SETUP_S", "0") or 0)
+            if staging_s > 0 and not events["stop_recording"]:
+                first_hint = resolve_cell_plan(dataset.num_episodes)
+                print()
+                print("-" * 70)
+                print(f"  STAGING    set up before the first episode    (up to {staging_s:.0f}s)")
+                if first_hint:
+                    print(f"  FIRST: {first_hint}")
+                print("  place the object, then drive the arm to the taped home pose")
+                print("  [->] done, start recording      [ESC] end session")
+                print("  [<-] ignored - nothing recorded yet")
+                print("-" * 70)
+                log_say("Staging", cfg.play_sounds)
+                events["phase"] = "staging"
+                record_loop(
+                    robot=robot,
+                    events=events,
+                    fps=cfg.dataset.fps,
+                    teleop_action_processor=teleop_action_processor,
+                    robot_action_processor=robot_action_processor,
+                    robot_observation_processor=robot_observation_processor,
+                    teleop=teleop,
+                    control_time_s=staging_s,
+                    single_task=cfg.dataset.single_task,
+                    display_data=cfg.display_data,
+                )
+                events["phase"] = "idle"
+
             while recorded_episodes < cfg.dataset.num_episodes and not events["stop_recording"]:
                 elapsed_min = (time.perf_counter() - session_started) / 60
                 print()

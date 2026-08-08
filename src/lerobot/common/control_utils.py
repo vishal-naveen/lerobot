@@ -143,10 +143,13 @@ def init_keyboard_listener():
     events["rerecord_episode"] = False
     events["stop_recording"] = False
     # Which phase the recorder is in: "record" while an episode is being captured,
-    # "reset" during the between-episode setup pause. The left arrow is ignored
-    # during "record" so a stray keypress cannot silently discard a take you are
-    # halfway through - you end the episode with the right arrow first, then redo
-    # it from the setup phase where there is nothing to lose.
+    # "reset" during the between-episode setup pause, "staging" during the one-off
+    # pause before the first episode. The left arrow is ignored during "record" so a
+    # stray keypress cannot silently discard a take you are halfway through - you end
+    # the episode with the right arrow first, then redo it from the setup phase where
+    # there is nothing to lose. It is ignored during "staging" too, because nothing
+    # has been recorded yet: acting on it there would arm rerecord_episode and
+    # silently discard the first episode as soon as it finished.
     events["phase"] = "idle"
 
     if is_headless():
@@ -162,7 +165,9 @@ def init_keyboard_listener():
     def on_press(key):
         try:
             if key == keyboard.Key.right:
-                if events.get("phase") == "reset":
+                if events.get("phase") == "staging":
+                    print("  [->] staging done, starting the first episode")
+                elif events.get("phase") == "reset":
                     print("  [->] skipping the rest of setup, starting the next episode")
                 else:
                     print("  [->] episode finished early")
@@ -173,6 +178,8 @@ def init_keyboard_listener():
                         "  [<-] IGNORED while recording. Press [->] to end this episode, "
                         "then [<-] during setup to redo it."
                     )
+                elif events.get("phase") == "staging":
+                    print("  [<-] IGNORED - nothing recorded yet. Press [->] when you are set up.")
                 else:
                     print("  [<-] discarding the last episode - it will be re-recorded")
                     events["rerecord_episode"] = True
