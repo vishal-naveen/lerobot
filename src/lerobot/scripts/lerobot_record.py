@@ -572,7 +572,10 @@ def record(
                 print("  [->] done, go to setup      [ESC] end session")
                 print("  [<-] ignored while recording")
                 print("=" * 70)
-                log_say(f"Recording episode {dataset.num_episodes}", cfg.play_sounds)
+                # 1-based, matching the banner. dataset.num_episodes is a count of
+                # SAVED episodes, so using it directly announced "episode 0" for the
+                # first take while the banner above said "episode 1 of N".
+                log_say(f"Recording episode {recorded_episodes + 1}", cfg.play_sounds)
                 events["phase"] = "record"
                 record_loop(
                     robot=robot,
