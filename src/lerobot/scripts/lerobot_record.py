@@ -620,7 +620,6 @@ def record(
                 )
 
                 # Execute a few seconds without recording to give time to manually reset the environment
-                # Skip reset for the last episode to be recorded
                 events["phase"] = "idle"
                 # Read the in-flight episode buffer, NOT dataset.num_frames: num_frames
                 # only advances in save_episode(), which runs further down this loop
@@ -631,22 +630,35 @@ def record(
                     pending_frames = dataset.writer.episode_buffer["size"]
                 print(f"  episode captured: {pending_frames} frames")
 
-                if not events["stop_recording"] and (
-                    (recorded_episodes < cfg.dataset.num_episodes - 1) or events["rerecord_episode"]
-                ):
+                # The reset window used to be skipped entirely for the last episode of
+                # a run, which meant the FINAL take of every run could never be
+                # discarded with the left arrow - the run saved it and exited before
+                # the operator had any window to act. Now the last episode gets the
+                # same teleop-live window, relabelled as a review: [<-] still discards
+                # and re-records, [->] or the timeout keeps it and ends the run.
+                is_last = recorded_episodes >= cfg.dataset.num_episodes - 1
+                if not events["stop_recording"]:
                     print()
                     print("-" * 70)
-                    print(f"  SETUP      reposition the object    (up to {cfg.dataset.reset_time_s}s)")
-                    # Look-ahead: the operator stages the NEXT episode during this
-                    # phase, so this is where the cell actually needs to be shown.
-                    next_hint = resolve_cell_plan(dataset.num_episodes + 1)
-                    if next_hint:
-                        print(f"  NEXT: {next_hint}")
-                    print("  [->] done, start the next episode")
-                    print("  [<-] throw away the episode just recorded and redo it")
-                    print("  [ESC] end session")
+                    if is_last:
+                        print(
+                            f"  REVIEW     last episode of this run    (up to {cfg.dataset.reset_time_s}s)"
+                        )
+                        print("  [->] keep it and finish the run")
+                        print("  [<-] throw it away and redo it")
+                        print("  [ESC] keep it and finish the run")
+                    else:
+                        print(f"  SETUP      reposition the object    (up to {cfg.dataset.reset_time_s}s)")
+                        # Look-ahead: the operator stages the NEXT episode during this
+                        # phase, so this is where the cell actually needs to be shown.
+                        next_hint = resolve_cell_plan(dataset.num_episodes + 1)
+                        if next_hint:
+                            print(f"  NEXT: {next_hint}")
+                        print("  [->] done, start the next episode")
+                        print("  [<-] throw away the episode just recorded and redo it")
+                        print("  [ESC] end session")
                     print("-" * 70)
-                    log_say("Reset the environment", cfg.play_sounds)
+                    log_say("Review the episode" if is_last else "Reset the environment", cfg.play_sounds)
                     events["phase"] = "reset"
 
                     record_loop(
