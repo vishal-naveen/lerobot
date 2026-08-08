@@ -452,7 +452,6 @@ def record(
             recorded_episodes = 0
             session_started = time.perf_counter()
             while recorded_episodes < cfg.dataset.num_episodes and not events["stop_recording"]:
-                frames_before = dataset.num_frames
                 elapsed_min = (time.perf_counter() - session_started) / 60
                 print()
                 print("=" * 70)
@@ -484,7 +483,14 @@ def record(
                 # Execute a few seconds without recording to give time to manually reset the environment
                 # Skip reset for the last episode to be recorded
                 events["phase"] = "idle"
-                print(f"  episode captured: {dataset.num_frames - frames_before} frames")
+                # Read the in-flight episode buffer, NOT dataset.num_frames: num_frames
+                # only advances in save_episode(), which runs further down this loop
+                # after the reset phase. Subtracting a before/after num_frames here
+                # always yielded 0 and reported every episode as empty.
+                pending_frames = 0
+                if dataset.writer is not None and dataset.writer.episode_buffer is not None:
+                    pending_frames = dataset.writer.episode_buffer["size"]
+                print(f"  episode captured: {pending_frames} frames")
 
                 if not events["stop_recording"] and (
                     (recorded_episodes < cfg.dataset.num_episodes - 1) or events["rerecord_episode"]
