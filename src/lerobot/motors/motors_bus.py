@@ -1127,15 +1127,24 @@ class SerialMotorsBus(MotorsBusBase):
         motors: NameOrID | Sequence[NameOrID] | None = None,
         *,
         normalize: bool = True,
-        num_retry: int = 0,
+        num_retry: int = 2,
     ) -> dict[str, Value]:
         """Read the same register from several motors at once.
+
+        num_retry defaults to 2, not 0. At 30 Hz there are two of these reads per
+        control step - ~324,000 per 90-minute session - and with no retry a single
+        lost status packet aborted the whole process. A retry is a fresh
+        txRxPacket() (full re-transmit, cannot return stale data) and costs ~2 ms
+        only on the failing step; the happy path never enters the retry branch.
+        A genuinely dead bus (USB re-enumeration invalidates the fd) still fails
+        all three attempts and raises within ~6 ms, so real disconnects surface
+        just as before.
 
         Args:
             data_name (str): Register name.
             motors (NameOrID | Sequence[NameOrID] | None, optional): Motors to query. `None` (default) reads every motor.
             normalize (bool, optional): Normalisation flag.  Defaults to `True`.
-            num_retry (int, optional): Retry attempts.  Defaults to `0`.
+            num_retry (int, optional): Retry attempts.  Defaults to `2`.
 
         Returns:
             dict[str, Value]: Mapping *motor name → value*.
